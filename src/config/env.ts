@@ -1,3 +1,7 @@
+console.log("ENV CHECK:", {
+  HELIUS_API_KEY: process.env.HELIUS_API_KEY,
+});
+
 const required = (name: string) => {
   const value = process.env[name];
   if (!value) {
