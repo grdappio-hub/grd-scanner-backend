@@ -4,6 +4,12 @@ import { db } from "../db/client";
 export const scansRouter = Router();
 
 scansRouter.get("/", async (_req, res) => {
+  if (!db) {
+    return res.status(503).json({
+      error: "Database not configured",
+    });
+  }
+
   try {
     const result = await db.query(`
       SELECT
@@ -34,6 +40,12 @@ scansRouter.get("/", async (_req, res) => {
 });
 
 scansRouter.get("/:id", async (req, res) => {
+  if (!db) {
+    return res.status(503).json({
+      error: "Database not configured",
+    });
+  }
+
   try {
     const { id } = req.params;
 

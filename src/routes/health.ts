@@ -5,7 +5,19 @@ export const healthRouter = Router();
 
 healthRouter.get("/", async (_req, res) => {
   try {
-    const result = await db.query("SELECT NOW() as now");
+    if (!db) {
+  return res.json({
+    status: "ok",
+    db: "disabled",
+  });
+}
+
+const result = await db.query("SELECT NOW() as now");
+
+return res.json({
+  status: "ok",
+  db: result.rows[0].now,
+});
     res.json({
       ok: true,
       database: "connected",
