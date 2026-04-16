@@ -1,22 +1,21 @@
-import dotenv from "dotenv";
-
-dotenv.config();
-
-function required(name: string): string {
+const required = (name: string) => {
   const value = process.env[name];
-  if (value === undefined) {
+  if (!value) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
-}
+};
+
+const optional = (name: string, fallback = "") => {
+  return process.env[name] || fallback;
+};
 
 export const env = {
-  port: Number(process.env.PORT || 3001),
-  nodeEnv: process.env.NODE_ENV || "development",
-  dbHost: required("DB_HOST"),
-  dbPort: Number(process.env.DB_PORT || 5432),
-  dbName: required("DB_NAME"),
-  dbUser: required("DB_USER"),
-  dbPassword: process.env.DB_PASSWORD || "",
+  dbHost: optional("DB_HOST"),
+  dbPort: optional("DB_PORT"),
+  dbName: optional("DB_NAME"),
+  dbUser: optional("DB_USER"),
+  dbPassword: optional("DB_PASSWORD"),
   heliusApiKey: required("HELIUS_API_KEY"),
+  port: optional("PORT", "3001"),
 };
