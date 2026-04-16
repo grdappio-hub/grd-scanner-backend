@@ -146,75 +146,81 @@ riskScore += whaleRisk;
       }
     }
 
-    const chainResult = await db.query(
-      `INSERT INTO chains (name, slug)
-       VALUES ($1, $2)
-       ON CONFLICT (slug)
-       DO UPDATE SET slug = EXCLUDED.slug
-       RETURNING id`,
-      [chain, chain]
-    );
+    let saved = false;
 
-    const chainId = chainResult.rows[0].id;
+if (db) {
+  const chainResult = await db.query(
+    `INSERT INTO chains (name, slug)
+     VALUES ($1, $2)
+     ON CONFLICT (slug)
+     DO UPDATE SET slug = EXCLUDED.slug
+     RETURNING id`,
+    [chain, chain]
+  );
 
-    const tokenResult = await db.query(
-      `INSERT INTO tokens (chain_id, address)
-       VALUES ($1, $2)
-       ON CONFLICT (chain_id, address)
-       DO UPDATE SET address = EXCLUDED.address
-       RETURNING id`,
-      [chainId, address]
-    );
+  const chainId = chainResult.rows[0].id;
 
-    const tokenId = tokenResult.rows[0].id;
+  const tokenResult = await db.query(
+    `INSERT INTO tokens (chain_id, address)
+     VALUES ($1, $2)
+     ON CONFLICT (chain_id, address)
+     DO UPDATE SET address = EXCLUDED.address
+     RETURNING id`,
+    [chainId, address]
+  );
 
-    const rawData = {
-      chain,
-      address,
-      balance,
+  const tokenId = tokenResult.rows[0].id;
+
+  const rawData = {
+    chain,
+    address,
+    balance,
+    concentration,
+    scanType,
+    largestAccountsError,
+  };
+
+  const scanInsert = await db.query(
+    `INSERT INTO scans (token_id, status, risk_score, confidence, raw_data, completed_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     RETURNING id`,
+    [tokenId, "completed", riskLevel, 90, JSON.stringify(rawData)]
+  );
+
+  const scanId = scanInsert.rows[0].id;
+
+  await db.query(
+    `INSERT INTO scan_results (
+      scan_id,
+      holder_concentration,
+      largest_wallet,
+      liquidity_score,
+      liquidity_usd,
+      whale_activity,
+      verification_status,
+      risk_level
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      scanId,
       concentration,
-      scanType,
-      largestAccountsError,
-    };
+      largestAccounts[0] ? Number(largestAccounts[0].amount) : 0,
+      "Unknown",
+      balance / 1e9,
+      concentration > 40,
+      verificationStatus,
+      riskLevel
+    ]
+  );
 
-    const scanInsert = await db.query(
-      `INSERT INTO scans (token_id, status, risk_score, confidence, raw_data, completed_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       RETURNING id`,
-      [tokenId, "completed", riskLevel, 90, JSON.stringify(rawData)]
-    );
+  await db.query(
+    `INSERT INTO scan_alerts (scan_id, message, severity)
+     VALUES ($1, $2, $3)`,
+    [scanId, alertMessage, alertSeverity]
+  );
 
-    const scanId = scanInsert.rows[0].id;
-
-    await db.query(
-      `INSERT INTO scan_results (
-        scan_id,
-        holder_concentration,
-        largest_wallet,
-        liquidity_score,
-        liquidity_usd,
-        whale_activity,
-        verification_status,
-        risk_level
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        scanId,
-        concentration,
-        largestAccounts[0] ? Number(largestAccounts[0].amount) : 0,
-        "Unknown",
-        balance / 1e9,
-        concentration > 40,
-        verificationStatus,
-        riskLevel
-      ]
-    );
-
-    await db.query(
-      `INSERT INTO scan_alerts (scan_id, message, severity)
-       VALUES ($1, $2, $3)`,
-      [scanId, alertMessage, alertSeverity]
-    );
+  saved = true;
+}
 
     return res.json({
   token: {
@@ -238,7 +244,7 @@ riskScore += whaleRisk;
   confidence,
 },
       timestamp: new Date().toISOString(),
-      saved: true,
+      saved,
     });
   } catch (error) {
     console.error("Scan route failed:", error);
