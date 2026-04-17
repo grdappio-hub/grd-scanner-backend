@@ -237,8 +237,36 @@ if (db) {
 const marketDisplay = marketData
   ? {
       priceUsd: marketData.priceUsd,
-      priceUsdFormatted:
-        marketData.priceUsd !== null ? `$${marketData.priceUsd.toFixed(4)}` : null,
+      priceUsdFormatted: formatPrice(marketData.priceUsd),
+
+      liquidityUsd: marketData.liquidityUsd,
+      liquidityUsdFormatted: formatCompactNumber(marketData.liquidityUsd),
+
+      volume24h: marketData.volume24h,
+      volume24hFormatted: formatCompactNumber(marketData.volume24h),
+
+      marketCap: marketData.marketCap,
+      marketCapFormatted: formatCompactNumber(marketData.marketCap),
+
+      fdv: marketData.fdv,
+      fdvFormatted: formatCompactNumber(marketData.fdv),
+
+      priceChange24h: marketData.priceChange24h,
+      dexId: marketData.dexId,
+      pairUrl: marketData.pairUrl,
+    }
+  : null;  ? {
+      priceUsd: marketData.priceUsd,
+      function formatPrice(price: number | null) {
+  if (price === null) return null;
+
+  if (price >= 1) return `$${price.toFixed(2)}`;
+  if (price >= 0.01) return `$${price.toFixed(4)}`;
+  if (price >= 0.0001) return `$${price.toFixed(6)}`;
+
+  // ultra small tokens (BONK, etc)
+return `$${price.toFixed(8)}`;
+}
 
       liquidityUsd: marketData.liquidityUsd,
       liquidityUsdFormatted: formatCompactNumber(marketData.liquidityUsd),
