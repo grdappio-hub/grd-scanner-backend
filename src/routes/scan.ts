@@ -1,5 +1,5 @@
 
-const { getTokenPairs } = require('../services/market/dexscreenerService');
+import { getTokenPairs } from "../services/market/dexscreenerService";
 import { Router } from "express";
 import { z } from "zod";
 import { db } from "../db/client";

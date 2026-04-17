@@ -1,6 +1,6 @@
-const BASE_URL = 'https://api.dexscreener.com';
+const BASE_URL = "https://api.dexscreener.com";
 
-async function getTokenPairs(chainId, tokenAddress) {
+export async function getTokenPairs(chainId: string, tokenAddress: string) {
   const url = `${BASE_URL}/token-pairs/v1/${chainId}/${tokenAddress}`;
 
   try {
@@ -16,14 +16,14 @@ async function getTokenPairs(chainId, tokenAddress) {
       return null;
     }
 
-    const sorted = data.sort((a, b) => {
+    const sorted = data.sort((a: any, b: any) => {
       return (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0);
     });
 
     const bestPair = sorted[0];
 
     return {
-      source: 'dexscreener',
+      source: "dexscreener",
       chainId: bestPair.chainId,
       dexId: bestPair.dexId,
       pairAddress: bestPair.pairAddress,
@@ -61,15 +61,10 @@ async function getTokenPairs(chainId, tokenAddress) {
 
       imageUrl: bestPair.info?.imageUrl || null,
       website: bestPair.info?.websites?.[0]?.url || null,
-      twitter: bestPair.info?.socials?.find(s => s.type === 'twitter')?.url || null,
+      twitter: bestPair.info?.socials?.find((s: any) => s.type === "twitter")?.url || null,
     };
-
   } catch (error) {
-    console.error('Dexscreener fetch failed:', error.message);
+    console.error("Dexscreener fetch failed:", error);
     return null;
   }
 }
-
-module.exports = {
-  getTokenPairs,
-};
