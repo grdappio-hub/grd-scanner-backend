@@ -1,3 +1,5 @@
+
+const { getTokenPairs } = require('../services/market/dexscreenerService');
 import { Router } from "express";
 import { z } from "zod";
 import { db } from "../db/client";
@@ -9,12 +11,29 @@ import {
 } from "../services/solana";
 import { getTokenMetadata } from "../services/tokenMetadata";
 export const scanRouter = Router();
+function formatCompactNumber(value: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return null;
 
+  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(2)}K`;
+
+  return `$${value.toFixed(2)}`;
+}
 const scanRequestSchema = z.object({
   chain: z.string().min(1),
   address: z.string().min(1),
 });
 
+function formatCompactNumber(value: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return null;
+
+  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(2)}K`;
+
+  return `$${value.toFixed(2)}`;
+}
 scanRouter.post("/", async (req, res) => {
   const parsed = scanRequestSchema.safeParse(req.body);
 
@@ -44,6 +63,7 @@ scanRouter.post("/", async (req, res) => {
     let tokenName: string | null = null;
 let tokenSymbol: string | null = null;
 let isVerifiedToken = false;
+let marketData: any = null;
 
     if (chain === "solana") {
       balance = await getSolanaBalance(address);
@@ -52,6 +72,7 @@ let isVerifiedToken = false;
 
       if (isMint) {
   scanType = "token";
+  marketData = await getTokenPairs(chain, address);
 
   const tokenMeta = await getTokenMetadata(address);
   tokenName = tokenMeta.name;
@@ -222,7 +243,31 @@ if (db) {
   saved = true;
 }
 
-    return res.json({
+const marketDisplay = marketData
+  ? {
+      priceUsd: marketData.priceUsd,
+      priceUsdFormatted:
+        marketData.priceUsd !== null ? `$${marketData.priceUsd.toFixed(4)}` : null,
+
+      liquidityUsd: marketData.liquidityUsd,
+      liquidityUsdFormatted: formatCompactNumber(marketData.liquidityUsd),
+
+      volume24h: marketData.volume24h,
+      volume24hFormatted: formatCompactNumber(marketData.volume24h),
+
+      marketCap: marketData.marketCap,
+      marketCapFormatted: formatCompactNumber(marketData.marketCap),
+
+      fdv: marketData.fdv,
+      fdvFormatted: formatCompactNumber(marketData.fdv),
+
+      priceChange24h: marketData.priceChange24h,
+      dexId: marketData.dexId,
+      pairUrl: marketData.pairUrl,
+    }
+  : null;
+
+return res.json({
   token: {
     chain,
     address,
@@ -230,22 +275,23 @@ if (db) {
     symbol: tokenSymbol,
     verified: isVerifiedToken,
   },
-      scanType,
-      balance,
-      concentration: concentration > 0
-  ? concentration.toFixed(2) + "%"
-  : null,
-      largestAccountsCount: largestAccounts.length,
-      topOwnersCount: topOwners.length,
-      largestAccountsError,
-     risk: {
-  level: riskLevel,
-  score: riskScore,
-  confidence,
-},
-      timestamp: new Date().toISOString(),
-      saved,
-    });
+  marketData: marketDisplay,
+  scanType,
+  balance,
+  concentration: concentration > 0
+    ? concentration.toFixed(2) + "%"
+    : null,
+  largestAccountsCount: largestAccounts.length,
+  topOwnersCount: topOwners.length,
+  largestAccountsError,
+  risk: {
+    level: riskLevel,
+    score: riskScore,
+    confidence,
+  },
+  timestamp: new Date().toISOString(),
+  saved,
+});
   } catch (error) {
     console.error("Scan route failed:", error);
     return res.status(500).json({
