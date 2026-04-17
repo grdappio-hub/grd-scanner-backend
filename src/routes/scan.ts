@@ -262,7 +262,7 @@ const marketDisplay = marketData
       dexId: marketData.dexId,
       pairUrl: marketData.pairUrl,
     }
-  
+    : null;
     
 
 return res.json({
