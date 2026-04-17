@@ -25,15 +25,6 @@ const scanRequestSchema = z.object({
   address: z.string().min(1),
 });
 
-function formatCompactNumber(value: number | null) {
-  if (value === null || value === undefined || Number.isNaN(value)) return null;
-
-  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(2)}K`;
-
-  return `$${value.toFixed(2)}`;
-}
 scanRouter.post("/", async (req, res) => {
   const parsed = scanRequestSchema.safeParse(req.body);
 
