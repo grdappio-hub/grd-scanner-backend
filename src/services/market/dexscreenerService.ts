@@ -1,11 +1,14 @@
 const BASE_URL = "https://api.dexscreener.com";
 
-const TRUSTED_QUOTE_PRIORITY = ["USDC", "USDT", "SOL"];
+const TRUSTED_QUOTES = ["USDC", "USDT", "SOL"];
 
-function getQuotePriority(symbol?: string | null) {
-  if (!symbol) return 999;
-  const index = TRUSTED_QUOTE_PRIORITY.indexOf(symbol.toUpperCase());
-  return index === -1 ? 999 : index;
+function normalizeSymbol(symbol?: string | null) {
+  return symbol ? symbol.toUpperCase() : null;
+}
+
+function isStable(symbol?: string | null) {
+  const s = normalizeSymbol(symbol);
+  return s === "USDC" || s === "USDT";
 }
 
 export async function getTokenPairs(chainId: string, tokenAddress: string) {
@@ -24,26 +27,67 @@ export async function getTokenPairs(chainId: string, tokenAddress: string) {
       return null;
     }
 
-    const sorted = [...data].sort((a: any, b: any) => {
-      const aPriority = getQuotePriority(a.quoteToken?.symbol);
-      const bPriority = getQuotePriority(b.quoteToken?.symbol);
+    const normalizedAddress = tokenAddress;
 
-      if (aPriority !== bPriority) {
-        return aPriority - bPriority;
-      }
+    const scoredPairs = data.map((pair: any) => {
+      const baseAddress = pair.baseToken?.address || null;
+      const quoteAddress = pair.quoteToken?.address || null;
+      const baseSymbol = normalizeSymbol(pair.baseToken?.symbol);
+      const quoteSymbol = normalizeSymbol(pair.quoteToken?.symbol);
 
-      return (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0);
+      const scannedIsBase = baseAddress === normalizedAddress;
+      const scannedIsQuote = quoteAddress === normalizedAddress;
+
+      let trustScore = 0;
+
+      // Prefer pools where the scanned token is the base token
+      if (scannedIsBase) trustScore += 100;
+      if (scannedIsQuote) trustScore += 20;
+
+      // Prefer trusted quote assets
+      if (TRUSTED_QUOTES.includes(quoteSymbol || "")) trustScore += 50;
+
+      // Prefer stable quote most of all
+      if (quoteSymbol === "USDC") trustScore += 30;
+      if (quoteSymbol === "USDT") trustScore += 25;
+      if (quoteSymbol === "SOL") trustScore += 15;
+
+      // Penalize pools where scanned token is quote and base is some random asset
+      if (scannedIsQuote && !isStable(baseSymbol)) trustScore -= 40;
+
+      return {
+        pair,
+        trustScore,
+      };
     });
 
-    const bestPair = sorted[0];
-    const quoteSymbol = bestPair.quoteToken?.symbol?.toUpperCase?.() || null;
+    scoredPairs.sort((a: any, b: any) => {
+      if (b.trustScore !== a.trustScore) {
+        return b.trustScore - a.trustScore;
+      }
+      return (b.pair.liquidity?.usd || 0) - (a.pair.liquidity?.usd || 0);
+    });
+
+    const bestPair = scoredPairs[0].pair;
+
+    const baseAddress = bestPair.baseToken?.address || null;
+    const quoteAddress = bestPair.quoteToken?.address || null;
+    const baseSymbol = normalizeSymbol(bestPair.baseToken?.symbol);
+    const quoteSymbol = normalizeSymbol(bestPair.quoteToken?.symbol);
+
+    const scannedIsBase = baseAddress === normalizedAddress;
+    const scannedIsQuote = quoteAddress === normalizedAddress;
 
     let priceUsd = bestPair.priceUsd ? Number(bestPair.priceUsd) : null;
 
-    // Stablecoin sanity checks
-    const baseSymbol = bestPair.baseToken?.symbol?.toUpperCase?.() || null;
-    if (baseSymbol === "USDC") priceUsd = 1;
-    if (baseSymbol === "USDT") priceUsd = 1;
+    // If the scanned token itself is a stablecoin, force peg-safe display
+    if (
+      normalizedAddress === "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" || // Solana USDC
+      (scannedIsBase && isStable(baseSymbol)) ||
+      (scannedIsQuote && isStable(quoteSymbol))
+    ) {
+      priceUsd = 1;
+    }
 
     return {
       source: "dexscreener",
@@ -51,7 +95,7 @@ export async function getTokenPairs(chainId: string, tokenAddress: string) {
       dexId: bestPair.dexId,
       pairAddress: bestPair.pairAddress,
       pairUrl: bestPair.url,
-      pricingSource: quoteSymbol || "UNKNOWN",
+      pricingSource: scannedIsBase ? (quoteSymbol || "UNKNOWN") : `QUOTE_SIDE_${baseSymbol || "UNKNOWN"}`,
 
       baseToken: {
         address: bestPair.baseToken?.address || null,
