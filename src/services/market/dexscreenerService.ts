@@ -1,5 +1,13 @@
 const BASE_URL = "https://api.dexscreener.com";
 
+const TRUSTED_QUOTE_PRIORITY = ["USDC", "USDT", "SOL"];
+
+function getQuotePriority(symbol?: string | null) {
+  if (!symbol) return 999;
+  const index = TRUSTED_QUOTE_PRIORITY.indexOf(symbol.toUpperCase());
+  return index === -1 ? 999 : index;
+}
+
 export async function getTokenPairs(chainId: string, tokenAddress: string) {
   const url = `${BASE_URL}/token-pairs/v1/${chainId}/${tokenAddress}`;
 
@@ -16,11 +24,26 @@ export async function getTokenPairs(chainId: string, tokenAddress: string) {
       return null;
     }
 
-    const sorted = data.sort((a: any, b: any) => {
+    const sorted = [...data].sort((a: any, b: any) => {
+      const aPriority = getQuotePriority(a.quoteToken?.symbol);
+      const bPriority = getQuotePriority(b.quoteToken?.symbol);
+
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
+      }
+
       return (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0);
     });
 
     const bestPair = sorted[0];
+    const quoteSymbol = bestPair.quoteToken?.symbol?.toUpperCase?.() || null;
+
+    let priceUsd = bestPair.priceUsd ? Number(bestPair.priceUsd) : null;
+
+    // Stablecoin sanity checks
+    const baseSymbol = bestPair.baseToken?.symbol?.toUpperCase?.() || null;
+    if (baseSymbol === "USDC") priceUsd = 1;
+    if (baseSymbol === "USDT") priceUsd = 1;
 
     return {
       source: "dexscreener",
@@ -28,6 +51,7 @@ export async function getTokenPairs(chainId: string, tokenAddress: string) {
       dexId: bestPair.dexId,
       pairAddress: bestPair.pairAddress,
       pairUrl: bestPair.url,
+      pricingSource: quoteSymbol || "UNKNOWN",
 
       baseToken: {
         address: bestPair.baseToken?.address || null,
@@ -41,7 +65,7 @@ export async function getTokenPairs(chainId: string, tokenAddress: string) {
         symbol: bestPair.quoteToken?.symbol || null,
       },
 
-      priceUsd: bestPair.priceUsd ? Number(bestPair.priceUsd) : null,
+      priceUsd,
       priceNative: bestPair.priceNative ? Number(bestPair.priceNative) : null,
 
       liquidityUsd: bestPair.liquidity?.usd || 0,
@@ -61,7 +85,8 @@ export async function getTokenPairs(chainId: string, tokenAddress: string) {
 
       imageUrl: bestPair.info?.imageUrl || null,
       website: bestPair.info?.websites?.[0]?.url || null,
-      twitter: bestPair.info?.socials?.find((s: any) => s.type === "twitter")?.url || null,
+      twitter:
+        bestPair.info?.socials?.find((s: any) => s.type === "twitter")?.url || null,
     };
   } catch (error) {
     console.error("Dexscreener fetch failed:", error);
