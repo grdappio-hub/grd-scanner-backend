@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS scans (
   requested_at TIMESTAMP DEFAULT NOW(),
   completed_at TIMESTAMP,
   status VARCHAR(20) DEFAULT 'pending',
-  risk_score VARCHAR(10),
+  risk_score INT,
+  risk_level VARCHAR(10),
   confidence INT,
   raw_data JSONB
 );
@@ -32,10 +33,19 @@ CREATE TABLE IF NOT EXISTS scans (
 CREATE TABLE IF NOT EXISTS scan_results (
   id SERIAL PRIMARY KEY,
   scan_id INT REFERENCES scans(id),
+
   holder_concentration NUMERIC,
-  largest_wallet NUMERIC,
+  largest_holder_amount NUMERIC,
+  largest_holder_percent NUMERIC,
+
   liquidity_score VARCHAR(20),
   liquidity_usd NUMERIC,
+  liquidity_pool_count INT,
+  primary_pair_address VARCHAR(255),
+  primary_pair_dex VARCHAR(50),
+  primary_pair_quote_symbol VARCHAR(20),
+  liquidity_lock_status VARCHAR(20),
+
   whale_activity BOOLEAN,
   verification_status VARCHAR(20),
   risk_level VARCHAR(10),
@@ -69,4 +79,20 @@ CREATE TABLE IF NOT EXISTS scan_cache (
   token_id INT REFERENCES tokens(id),
   cached_result JSONB,
   expires_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS scan_liquidity_pools (
+  id SERIAL PRIMARY KEY,
+  scan_id INT REFERENCES scans(id),
+  pair_address VARCHAR(255),
+  dex_id VARCHAR(50),
+  base_symbol VARCHAR(20),
+  quote_symbol VARCHAR(20),
+  liquidity_usd NUMERIC,
+  volume_24h_usd NUMERIC,
+  is_primary BOOLEAN DEFAULT FALSE,
+  pool_share_percent NUMERIC,
+  lock_status VARCHAR(20),
+  lock_detail JSONB,
+  created_at TIMESTAMP DEFAULT NOW()
 );

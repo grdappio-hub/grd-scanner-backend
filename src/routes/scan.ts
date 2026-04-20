@@ -24,7 +24,14 @@ const scanRequestSchema = z.object({
   chain: z.string().min(1),
   address: z.string().min(1),
 });
+function formatPrice(price: number | null) {
+  if (price === null) return null;
 
+  if (price >= 1) return `$${price.toFixed(2)}`;
+  if (price >= 0.01) return `$${price.toFixed(4)}`;
+  if (price >= 0.0001) return `$${price.toFixed(6)}`;
+  return `$${price.toFixed(8)}`;
+}
 scanRouter.post("/", async (req, res) => {
   const parsed = scanRequestSchema.safeParse(req.body);
 
@@ -63,6 +70,7 @@ let marketData: any = null;
 
       if (isMint) {
   scanType = "token";
+  balance = 0;
   marketData = await getTokenPairs(chain, address);
 
   const tokenMeta = await getTokenMetadata(address);
@@ -193,11 +201,26 @@ if (db) {
   };
 
   const scanInsert = await db.query(
-    `INSERT INTO scans (token_id, status, risk_score, confidence, raw_data, completed_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())
-     RETURNING id`,
-    [tokenId, "completed", riskLevel, 90, JSON.stringify(rawData)]
-  );
+  `INSERT INTO scans (
+    token_id,
+    status,
+    risk_score,
+    risk_level,
+    confidence,
+    raw_data,
+    completed_at
+  )
+  VALUES ($1, $2, $3, $4, $5, $6, NOW())
+  RETURNING id`,
+  [
+    tokenId,
+    "completed",
+    riskScore,
+    riskLevel,
+    confidence,
+    JSON.stringify(rawData),
+  ]
+);
 
   const scanId = scanInsert.rows[0].id;
 
@@ -218,7 +241,7 @@ if (db) {
       concentration,
       largestAccounts[0] ? Number(largestAccounts[0].amount) : 0,
       "Unknown",
-      balance / 1e9,
+      marketData?.liquidityUsd ?? 0,
       concentration > 40,
       verificationStatus,
       riskLevel
@@ -233,14 +256,7 @@ if (db) {
 
   saved = true;
 }
-function formatPrice(price: number | null) {
-  if (price === null) return null;
 
-  if (price >= 1) return `$${price.toFixed(2)}`;
-  if (price >= 0.01) return `$${price.toFixed(4)}`;
-  if (price >= 0.0001) return `$${price.toFixed(6)}`;
-  return `$${price.toFixed(8)}`;
-}
 const marketDisplay = marketData
   ? {
       priceUsd: marketData.priceUsd,
