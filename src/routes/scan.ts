@@ -1,4 +1,5 @@
-
+import { getLiquidityTrust } from "../services/liquidityTrust";
+import { getTokenControls } from "../services/tokenControls";
 import { getTokenPairs } from "../services/market/dexscreenerService";
 import { Router } from "express";
 import { z } from "zod";
@@ -62,6 +63,8 @@ scanRouter.post("/", async (req, res) => {
 let tokenSymbol: string | null = null;
 let isVerifiedToken = false;
 let marketData: any = null;
+let contractControls: any = null;
+let liquidityTrust: any = null;
 
     if (chain === "solana") {
       balance = await getSolanaBalance(address);
@@ -72,6 +75,8 @@ let marketData: any = null;
   scanType = "token";
   balance = 0;
   marketData = await getTokenPairs(chain, address);
+  contractControls = await getTokenControls(address);
+  liquidityTrust = await getLiquidityTrust(marketData);
 
   const tokenMeta = await getTokenMetadata(address);
   tokenName = tokenMeta.name;
@@ -86,17 +91,16 @@ let marketData: any = null;
           largestAccounts = await getTokenLargestAccounts(address);
 topOwners = await getTopTokenOwners(address);
 
-const totalOwnerBalance = topOwners.reduce(
-  (sum, owner) => sum + Number(owner.amount),
-  0
-);
-
 const top5Owners = topOwners
   .slice(0, 5)
   .reduce((sum, owner) => sum + Number(owner.amount), 0);
 
-concentration = totalOwnerBalance > 0
-  ? (top5Owners / totalOwnerBalance) * 100
+const totalSupplyRaw = contractControls?.supply?.raw
+  ? Number(contractControls.supply.raw)
+  : 0;
+
+concentration = totalSupplyRaw > 0
+  ? (top5Owners / totalSupplyRaw) * 100
   : 0;
 
           if (concentration > 50) {
@@ -153,13 +157,20 @@ riskScore += whaleRisk;
         verificationStatus = "large_token";
         alertMessage = "Distribution data unavailable for this token";
         alertSeverity = "medium";
-}       else {
+} else {
         concentration = 0;
         riskLevel = "UNKNOWN";
         riskScore = 0;
-        confidence = 40;
+
+        if (largestAccountsError.includes("overloaded")) {
+          confidence = 70;
+          alertMessage = "Holder distribution temporarily unavailable due to RPC/indexer load";
+        } else {
+          confidence = 50;
+          alertMessage = "Unable to analyze holder distribution";
+        }
+
         verificationStatus = "unavailable";
-        alertMessage = "Unable to analyze holder distribution";
         alertSeverity = "medium";
 }
         }
@@ -280,7 +291,53 @@ const marketDisplay = marketData
     }
     : null;
     
+const contractRisk =
+  contractControls?.mintAuthority?.status === "active"
+    ? 20
+    : contractControls?.freezeAuthority?.status === "active"
+      ? 15
+      : contractControls?.updateAuthority?.status === "active"
+        ? 5
+        : 0;
 
+const liquidityRisk =
+  liquidityTrust?.riskImpact === "high"
+    ? 25
+    : liquidityTrust?.riskImpact === "medium"
+      ? 10
+      : 0;
+
+const holderRisk =
+  largestAccountsError
+    ? 0
+    : concentration > 50
+      ? 35
+      : concentration > 25
+        ? 20
+        : 0;
+
+const devRisk = 0;
+
+const riskBreakdown = {
+  contractRisk,
+  liquidityRisk,
+  holderRisk,
+  devRisk,
+};
+const calculatedRiskScore =
+  contractRisk + liquidityRisk + holderRisk + devRisk;
+
+if (calculatedRiskScore > 0) {
+  riskScore = Math.min(calculatedRiskScore, 100);
+
+  if (riskScore >= 50) {
+    riskLevel = "HIGH";
+  } else if (riskScore >= 25) {
+    riskLevel = "MEDIUM";
+  } else {
+    riskLevel = "LOW";
+  }
+}
 return res.json({
   token: {
     chain,
@@ -289,20 +346,45 @@ return res.json({
     symbol: tokenSymbol,
     verified: isVerifiedToken,
   },
+
   marketData: marketDisplay,
-  scanType,
-  balance,
-  concentration: concentration > 0
-    ? concentration.toFixed(2) + "%"
+
+  contractControls,
+  liquidityTrust,
+
+  holderAnalysis: {
+  concentrationPercent: largestAccountsError ? null : concentration,
+  concentrationFormatted: largestAccountsError
+    ? null
+    : concentration > 0
+      ? concentration.toFixed(2) + "%"
+      : null,
+  topOwnersCount: largestAccountsError ? null : topOwners.length,
+  topTokenAccountsCount: largestAccountsError ? null : largestAccounts.length,
+  status: largestAccountsError ? "unavailable" : "complete",
+  note: largestAccountsError
+    ? largestAccountsError.includes("Too many accounts requested")
+      ? "Holder distribution unavailable for large token"
+      : largestAccountsError.includes("overloaded")
+        ? "Holder distribution temporarily unavailable due to RPC/indexer load"
+        : "Holder distribution unavailable"
     : null,
-  largestAccountsCount: largestAccounts.length,
-  topOwnersCount: topOwners.length,
-  largestAccountsError,
+},
+
+  riskBreakdown,
+
   risk: {
     level: riskLevel,
     score: riskScore,
     confidence,
   },
+
+  scanType,
+  balance,
+  largestAccountsCount: largestAccountsError ? null : largestAccounts.length,
+topOwnersCount: largestAccountsError ? null : topOwners.length,
+  largestAccountsError,
+
   timestamp: new Date().toISOString(),
   saved,
 });
